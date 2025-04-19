@@ -1,77 +1,142 @@
-<Page x:Class="Theatre.Pages.CaptchaPage"
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      Title="Captcha Verification"
-      WindowStartupLocation="CenterScreen"
-      SizeToContent="WidthAndHeight">
+<?php
+require_once 'config.php';
 
-    <Grid>
-        <!-- Фоновое изображение на весь экран -->
-        <Grid.Background>
-            <ImageBrush ImageSource="/Assets/TheaterBackground.jpg" 
-                       Stretch="UniformToFill"/>
-        </Grid.Background>
-        
-        <!-- Затемнение фона для лучшей читаемости -->
-        <Rectangle Fill="#80000000"/>
-        
-        <!-- Контейнер формы капчи -->
-        <Border Background="#E6FFFFFF"
-                CornerRadius="8"
-                BorderBrush="#A0522D"
-                BorderThickness="1.5"
-                Width="350" 
-                Height="250"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Effect="{StaticResource ShadowEffect}">
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $login = trim($_POST['login']);
+    $password = trim($_POST['password']);
+    
+    if (empty($login) || empty($password)) {
+        $error = "Логин и пароль обязательны для заполнения";
+    } elseif (strlen($password) < 6) {
+        $error = "Пароль должен содержать минимум 6 символов";
+    } else {
+        try {
+            // Проверяем, существует ли пользователь
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE login = ?");
+            $stmt->execute([$login]);
             
-            <StackPanel>
-                <TextBlock Text="Пожалуйста, введите код с изображения:" 
-                           Margin="0,0,0,10"
-                           Style="{StaticResource CardTitleTextStyle}"
-                           HorizontalAlignment="Center"
-                           Foreground="#5D4037"/>
+            if ($stmt->rowCount() > 0) {
+                $error = "Пользователь с таким логином уже существует";
+            } else {
+                // Хешируем пароль
+                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+                
+                // Добавляем нового пользователя
+                $stmt = $pdo->prepare("INSERT INTO users (login, password) VALUES (?, ?)");
+                $stmt->execute([$login, $hashedPassword]);
+                
+                header("Location: login.php?registered=1");
+                exit();
+            }
+        } catch (PDOException $e) {
+            $error = "Ошибка при регистрации: " . $e->getMessage();
+        }
+    }
+}
+?>
 
-                <Border Background="White"
-                        Height="80"
-                        Margin="0,0,0,10"
-                        CornerRadius="4">
-                    <Image x:Name="CaptchaImage" 
-                           Stretch="Uniform"/>
-                </Border>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Регистрация</title>
+    <style>
+        .error { color: red; }
+        form { max-width: 300px; margin: 0 auto; }
+        input, button { width: 100%; padding: 8px; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h2>Регистрация</h2>
+    
+    <?php if (isset($error)): ?>
+        <p class="error"><?= htmlspecialchars($error) ?></p>
+    <?php endif; ?>
+    
+    <form method="post">
+        <div>
+            <label>Логин:</label>
+            <input type="text" name="login" required>
+        </div>
+        <div>
+            <label>Пароль:</label>
+            <input type="password" name="password" required>
+        </div>
+        <button type="submit">Зарегистрироваться</button>
+    </form>
+    
+    <p>Уже зарегистрированы? <a href="login.php">Войдите</a></p>
+</body>
+</html>
+
+<?php
+session_start();
+require_once 'config.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $login = trim($_POST['login']);
+    $password = trim($_POST['password']);
+    
+    if (empty($login) || empty($password)) {
+        $error = "Логин и пароль обязательны для заполнения";
+    } else {
+        try {
+            // Ищем пользователя в базе
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE login = ?");
+            $stmt->execute([$login]);
+            $user = $stmt->fetch();
+            
+            if ($user && password_verify($password, $user['password'])) {
+                // Авторизация успешна
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['login'] = $user['login'];
                 
-                <StackPanel Orientation="Horizontal" 
-                            HorizontalAlignment="Center">
-                    <TextBox x:Name="CaptchaTextBox" 
-                             Height="40" 
-                             Width="250"
-                             FontSize="16"
-                             Style="{StaticResource BaseTextBoxStyle}"
-                             Background="#FFF8E1"
-                             Foreground="#5D4037"/>
-                    
-                    <Button Background="Transparent"
-                            Height="40" 
-                            Width="40"
-                            Margin="10,0,0,0"
-                            Click="RefreshButton_Click"
-                            BorderThickness="0"
-                            ToolTip="Обновить капчу">
-                        <Image Source="/Assets/refresh.png" 
-                               Width="25" 
-                               Height="25"/>
-                    </Button>
-                </StackPanel>
-                
-                <Button Content="Подтвердить"
-                        Margin="0,15,0,0"    
-                        Height="35"
-                        Click="VerifyButton_Click" 
-                        Style="{StaticResource LoginButtonStyle}"
-                        Background="#8D6E63"
-                        Foreground="White"/>
-            </StackPanel>
-        </Border>
-    </Grid>
-</Page>
+                header("Location: profile.php");
+                exit();
+            } else {
+                $error = "Неверный логин или пароль";
+            }
+        } catch (PDOException $e) {
+            $error = "Ошибка при авторизации: " . $e->getMessage();
+        }
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Авторизация</title>
+    <style>
+        .error { color: red; }
+        form { max-width: 300px; margin: 0 auto; }
+        input, button { width: 100%; padding: 8px; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h2>Авторизация</h2>
+    
+    <?php if (isset($_GET['registered'])): ?>
+        <p style="color: green;">Регистрация прошла успешно! Теперь вы можете войти.</p>
+    <?php endif; ?>
+    
+    <?php if (isset($error)): ?>
+        <p class="error"><?= htmlspecialchars($error) ?></p>
+    <?php endif; ?>
+    
+    <form method="post">
+        <div>
+            <label>Логин:</label>
+            <input type="text" name="login" required>
+        </div>
+        <div>
+            <label>Пароль:</label>
+            <input type="password" name="password" required>
+        </div>
+        <button type="submit">Войти</button>
+    </form>
+    
+    <p>Еще не зарегистрированы? <a href="register.php">Зарегистрируйтесь</a></p>
+</body>
+</html>
